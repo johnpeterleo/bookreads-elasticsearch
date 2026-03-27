@@ -26,6 +26,10 @@ def clean_goodreads_data(file_path="books_sample_matched.csv"):
     # Drop rows where any essential column is empty string
     df_clean = df_clean[df_clean[essential_columns].apply(lambda row: all(str(x).strip() != '' for x in row), axis=1)]
 
+    # Re-index book_id sequentially
+    df_clean = df_clean.reset_index(drop=True)
+    df_clean['book_id'] = df_clean.index
+
     return df_clean
 
 if __name__ == "__main__":
