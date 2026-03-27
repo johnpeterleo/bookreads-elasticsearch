@@ -66,7 +66,7 @@ chmod +x download_data.sh
 ```bash
 python clean_data.py
 ```
-This produces goodreads_clean.csv inside /data.
+This produces goodreads_clean.csv inside /data which contains 5.5M books -> 840k books after filtering such that all entries contain title, authors, description, genres, and average rating.
 
 ## Contact
 John Christensen - johnchristensen@outlook.com
