@@ -5,7 +5,7 @@ A local search engine project using Elasticsearch.
 
 1. Clone the repo and navigate into it:
 ```bash
-git clone https://github.com/johnpeterleo/bookreads-elasticsearch.git
+git clone git@github.com:johnpeterleo/bookreads-elasticsearch.git
 cd bookreads-elasticsearch
 ```
 
