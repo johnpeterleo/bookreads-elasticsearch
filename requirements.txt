@@ -1,0 +1,2 @@
+elasticsearch>=9.0.0    #elasricsearch version
+pandas                  #handles datasets once its downloaded
