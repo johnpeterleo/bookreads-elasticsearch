@@ -29,15 +29,15 @@ docker ps            # verify they are running
 You mostly interact with it via code, scripts, or curl. Visiting the URL in a browser just shows JSON status.
 ```bash
 Elasticsearch: http://localhost:9200
-Username: `elastic`
-Password: `YwGNRfez`
+Username: elastic
+Password: YwGNRfez
 ```
 
 - Kibana login (GUI / frontend) – for exploring data, dashboards, and visualizations:
 ```bash
 Kibana: http://localhost:5601
-Username: `elastic`
-Password: `YwGNRfez`
+Username: elastic
+Password: YwGNRfez
 ```
 
 
