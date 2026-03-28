@@ -1,5 +1,5 @@
 # bookreads-elasticsearch
-A local search engine project using Elasticsearch.
+A local search engine project using [Elasticsearch] (https://github.com/elastic/elasticsearch)
 
 ## Project Structure 
 
@@ -10,6 +10,7 @@ A local search engine project using Elasticsearch.
 - /src: Python scripts and modules.
 - README.md: Providing an overview and documentation.
 - requirements.txt: Provides required python libraries.
+
 
 ## Quick Start
 
