@@ -1,5 +1,5 @@
 # bookreads-elasticsearch
-A local search engine project using [Elasticsearch] (https://github.com/elastic/elasticsearch)
+A local search engine project using [Elasticsearch](https://github.com/elastic/elasticsearch)
 
 ## Project Structure 
 
