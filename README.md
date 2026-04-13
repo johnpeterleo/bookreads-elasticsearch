@@ -56,19 +56,39 @@ Username: elastic
 Password: YwGNRfez
 ```
 
-5. Download bookreads kaggle data:
-- Make a free Kaggle account
+5. Download bookreads data from 2017 bookreads [Goodreads Book Graph Datasets](https://cseweb.ucsd.edu/~jmcauley/datasets/goodreads.html):
+- It is large and might take an hour, but only needs to be run once
+There are two larger files: bookdata 2GB and reviews 5GB
 - Run the download script inside /src:
 ```bash
 chmod +x download_data.sh
 ./download_data.sh
 ```
-- Since some entries are incomplete, clean the dataset with:
+- if using macOS you can run:
+```
+caffeinate -i bash download_data.sh
+```
+- clean the dataset with:
 ```bash
 python clean_data.py
 ```
-This produces goodreads_clean.csv inside /data which contains 5.5M books -> 840k books after filtering such that all entries contain title, authors, description, genres, and average rating.
 
+6. Upload data to elastic search engine
+- run send_data_to_elasticsearch.py
+```bash
+python send_data_to_elasticsearch.py
+```
+- then verify using this command:
+```bash
+curl -u elastic:YwGNRfez "http://localhost:9200/_cat/indices?v"
+curl -u elastic:YwGNRfez "http://localhost:9200/books/_search?size=1&pretty"
+```
+
+## How to run
+1. Run the recommendation engine using this command
+```bash
+python recommendations.py
+```
 ## Contact
 John Christensen - johnchristensen@outlook.com
 
