@@ -28,7 +28,7 @@ def load_authors(file_path):
 # ---------------------------
 # LOAD BOOKS (with limit)
 # ---------------------------
-def load_books(file_path, limit=1000):
+def load_books(file_path, limit=100000):
     '''
     Load book metadata from compressed JSON file, with a limit
     Each line in JSON file is a book JSON object
@@ -90,7 +90,7 @@ def clean_books(df, author_map):
 
     return df
 
-def load_reviews_for_books(file_path, valid_book_ids, limit=100000):
+def load_reviews_for_books(file_path, valid_book_ids, limit=1000000):
     """
     Load ONLY reviews that match selected books
     """
@@ -125,6 +125,31 @@ def load_reviews_for_books(file_path, valid_book_ids, limit=100000):
 
     return pd.DataFrame(reviews)
 
+
+# ---------------------------
+# CLEAN + TRANSFORM REVIEWS DATA
+# ---------------------------
+def clean_reviews(df):
+    """
+    Ensure the data types and values in the reviews dataframe map cleanly to Elasticsearch expected types
+    """
+    if df.empty:
+        return df
+        
+    df = df.copy()
+
+    # Drop any reviews that lack a book_id or user_id
+    df = df.dropna(subset=["book_id", "user_id"])
+
+    # Ensure ratings are integers 
+    df["rating"] = pd.to_numeric(df["rating"], errors="coerce").fillna(0).astype(int)
+
+    # Ensure review text is a string
+    df["review_text"] = df["review_text"].fillna("").astype(str)
+    
+    return df
+
+
 # ---------------------------
 # MAIN FUNCTION
 # ---------------------------
@@ -138,7 +163,7 @@ if __name__ == "__main__":
     author_map = load_authors(authors_path)
 
     print("Loading books...")
-    df_books = load_books(books_path, limit=1000)
+    df_books = load_books(books_path, limit=100000)
 
     #downloaded books (1000 of full dataset)
     valid_book_ids = set(df_books["book_id"].astype(str))
@@ -152,14 +177,19 @@ if __name__ == "__main__":
     )
 
     print("\n=== ONE RANDOM REVIEW ===")
-    print(df_reviews.sample(1))
+    if not df_reviews.empty:
+        print(df_reviews.sample(1))
 
     # keep relevant columns for Elasticsearch indexing
-    print("Cleaning...")
+    print("Cleaning books...")
     df_clean = clean_books(df_books, author_map)
+
+    print("Cleaning reviews...")
+    df_reviews_clean = clean_reviews(df_reviews)
 
     print(df_clean.head())
 
     df_clean.to_csv("../data/goodreads_clean.csv", index=False)
+    df_reviews_clean.to_csv("../data/goodreads_reviews_clean.csv", index=False)
 
-    print("Saved cleaned dataset.")
+    print("Saved cleaned dataset and reviews.")
