@@ -1,44 +1,195 @@
 # clean_data.py
+import gzip
+import json
 import pandas as pd
 import os
+import ast
 
-def clean_goodreads_data(file_path="books_sample_matched.csv"):
+
+# ---------------------------
+# LOAD AUTHORS MAP
+# ---------------------------
+def load_authors(file_path):
+    '''
+    reads authors file and creates a mapping of author_id -> author_name
+    why: because dataset stores IDs
+    '''
+    author_map = {}
+
+    #open compressed file in text mode 
+    with gzip.open(file_path, "rt", encoding="utf-8") as f:
+        for line in f:
+            obj = json.loads(line) #convert JSON string to python dict
+            author_map[obj["author_id"]] = obj.get("name", "") #store mapping ID -> name
+
+    return author_map
+
+
+# ---------------------------
+# LOAD BOOKS (with limit)
+# ---------------------------
+def load_books(file_path, limit=100000):
+    '''
+    Load book metadata from compressed JSON file, with a limit
+    Each line in JSON file is a book JSON object
+    '''
+    books = []
+
+    #open compressed file in text mode 
+    with gzip.open(file_path, "rt", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i >= limit:
+                break
+            books.append(json.loads(line)) #parse JSON line into dict
+
+    #convert list of dicts into pandas DataFrame
+    return pd.DataFrame(books)
+
+
+# ---------------------------
+# CLEAN + TRANSFORM BOOK DATA
+# ---------------------------
+def clean_books(df, author_map):
+
+    def resolve(authors):
+        '''
+        Convert list of author dictionaries into readable author names using the author_map
+        For example: [{"author_id": 123"}, {author_id": 456}] -> }] -> ["J.K. Rowling", "Stephen King"]'''
+
+        #some rows may not be lists
+        if not isinstance(authors, list):
+            return []
+
+        names = []
+        for a in authors:
+            aid = a.get("author_id") #extract author ID
+            names.append(author_map.get(aid, "unknown")) #convert ID -> name using map,  default to "unknown" if ID not found
+        return names
+
+    #dont modify original dataframe
+    df = df.copy()
+
+    df["authors"] = df["authors"].apply(resolve)
+
+    df["description"] = df["description"].fillna("").astype(str)
+
+    df["average_rating"] = pd.to_numeric(df["average_rating"], errors="coerce").fillna(0.0)
+
+    
+    if "genres" in df.columns:
+        df["genres"] = df["genres"].fillna([])
+
+    #relevant fields for elasticsearch index
+    df = df[[
+        "book_id",
+        "title",
+        "authors",
+        "description",
+        "average_rating"
+    ]]
+
+    return df
+
+def load_reviews_for_books(file_path, valid_book_ids, limit=1000000):
     """
-    Loads the Goodreads dataset and filters out entries that are missing any essential information.
-    Keeps all columns, but drops rows where essential fields are empty or NaN.
+    Load ONLY reviews that match selected books
     """
-    # Load the full dataset
-    df = pd.read_csv(file_path)
-    print(f"Number of books before cleaning: {df.shape}")
 
-    # Essential columns to check for missing values
-    essential_columns = [
-        'title_x',         # book title
-        'authors_x',       # authors info
-        'description',     # text for full-text search
-        'genres_x',        # genres for filtering
-        'average_rating_x' # overall rating for ranking
-    ]
+    reviews = []
+    valid_book_ids = set(map(str, valid_book_ids))
 
-    # Drop rows with NaN in any essential column
-    df_clean = df.dropna(subset=essential_columns)
+    #open compressed file in text mode
+    with gzip.open(file_path, "rt", encoding="utf-8") as f:
 
-    # Drop rows where any essential column is empty string
-    df_clean = df_clean[df_clean[essential_columns].apply(lambda row: all(str(x).strip() != '' for x in row), axis=1)]
+        #read all reviews (millions.... but we will filter by book_id)
+        for i, line in enumerate(f):
 
-    # Re-index book_id sequentially
-    df_clean = df_clean.reset_index(drop=True)
-    df_clean['book_id'] = df_clean.index
+            if i >= limit:
+                break
+            
+            #parse review JSON line into dict
+            obj = json.loads(line)
 
-    return df_clean
+            book_id = obj.get("book_id")
+            if book_id is None:
+                continue
 
+            #if review's book_id is in our valid set, keep it
+            if str(book_id) in valid_book_ids:
+                reviews.append({
+                    "book_id": str(book_id),
+                    "user_id": obj.get("user_id"),
+                    "rating": obj.get("rating"),
+                    "review_text": obj.get("review_text", "")
+                })
+
+    return pd.DataFrame(reviews)
+
+
+# ---------------------------
+# CLEAN + TRANSFORM REVIEWS DATA
+# ---------------------------
+def clean_reviews(df):
+    """
+    Ensure the data types and values in the reviews dataframe map cleanly to Elasticsearch expected types
+    """
+    if df.empty:
+        return df
+        
+    df = df.copy()
+
+    # Drop any reviews that lack a book_id or user_id
+    df = df.dropna(subset=["book_id", "user_id"])
+
+    # Ensure ratings are integers 
+    df["rating"] = pd.to_numeric(df["rating"], errors="coerce").fillna(0).astype(int)
+
+    # Ensure review text is a string
+    df["review_text"] = df["review_text"].fillna("").astype(str)
+    
+    return df
+
+
+# ---------------------------
+# MAIN FUNCTION
+# ---------------------------
 if __name__ == "__main__":
-    os.makedirs("../data", exist_ok=True)
-    df_clean = clean_goodreads_data(file_path="../data/books_sample_matched.csv")
-    df_clean.to_csv("../data/goodreads_clean.csv", index=False)
+    #paths to compressed JSON files
+    books_path = "../data/goodreads_books.json.gz"
+    authors_path = "../data/goodreads_book_authors.json.gz"
+    reviews_path = "../data/goodreads_reviews_dedup.json.gz"
 
-    # Print summary info
-    print(f"Cleaned data shape: {df_clean.shape}")
-    print(f"Number of books: {len(df_clean)}")
-    print("First 5 records:")
+    print("Loading authors...")
+    author_map = load_authors(authors_path)
+
+    print("Loading books...")
+    df_books = load_books(books_path, limit=100000)
+
+    #downloaded books (1000 of full dataset)
+    valid_book_ids = set(df_books["book_id"].astype(str))
+
+    #scan for reviews that match the subset of books
+    print("Loading filtered reviews...")
+    df_reviews = load_reviews_for_books(
+        reviews_path,
+        valid_book_ids,
+        limit=500000  # large scan but filtered output
+    )
+
+    print("\n=== ONE RANDOM REVIEW ===")
+    if not df_reviews.empty:
+        print(df_reviews.sample(1))
+
+    # keep relevant columns for Elasticsearch indexing
+    print("Cleaning books...")
+    df_clean = clean_books(df_books, author_map)
+
+    print("Cleaning reviews...")
+    df_reviews_clean = clean_reviews(df_reviews)
+
     print(df_clean.head())
+
+    df_clean.to_csv("../data/goodreads_clean.csv", index=False)
+    df_reviews_clean.to_csv("../data/goodreads_reviews_clean.csv", index=False)
+
+    print("Saved cleaned dataset and reviews.")
