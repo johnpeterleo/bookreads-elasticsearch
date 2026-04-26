@@ -12,7 +12,15 @@ class Recommend:
             "http://localhost:9200",
             basic_auth=("elastic", "YwGNRfez"))
 
-    def get_user_history(self, user_id, holdout_book_id=None):
+    def get_user_history(self, user_id, holdout_book_ids=None):
+        """Fetch user's read history and their likes.
+        Args:
+            user_id (str): User id
+            holdout_book_ids(list | null): List containing books we want to hide for eval purposes.
+        Returns: 
+            read_books (list): List of book ids.
+            liked_books(list): List of liked book ids. 
+        """
         query = {
             "query": {
                 "term": {"user_id": user_id}
@@ -25,14 +33,25 @@ class Recommend:
         liked_books = []
         for book in hits:
             book_id = book['_source']['book_id']
-            if book_id == holdout_book_id:
-                continue # Skip the holdout book
+            if holdout_book_ids and book_id in holdout_book_ids:
+                continue  # Skip the holdout books
             read_books.append(book_id)
             if (book['_source']['rating'] >= 3):
                 liked_books.append(book_id)
         return read_books, liked_books
 
     def get_books_from_similar_users(self, liked_books, read_books, user_id):
+        """Fetch books from similar users. 
+
+        Args:
+            liked_books (list): Consists of book ids of the user's liked books.
+            read_books (list): Consists of book ids of the user's read books.
+            user_id (str): User id.
+
+        Returns:
+            candidate_books(list): List of book ids that were read by similar users.
+            similar_users(list): List of user ids.
+        """
         query = {
             "query": {
                 "bool": {
@@ -48,7 +67,7 @@ class Recommend:
             },
             "aggs": {
                 "similar_users": {
-                    "terms": {"field": "user_id", "size": 15}
+                    "terms": {"field": "user_id", "size": 50}
                 }
             },
             "size": 0
@@ -73,7 +92,7 @@ class Recommend:
             },
             "aggs": {
                 "books_from_similar_users": {
-                    "terms": {"field": "book_id", "size": 25}
+                    "terms": {"field": "book_id", "size": 500}
                 }
             },
             "size": 0
@@ -86,7 +105,15 @@ class Recommend:
         return candidate_books, similar_users
 
     def get_liked_book_details(self, liked_books):
-        """Fetch authors and descriptions for the books the user liked."""
+        """Fetch authors and descriptions for the books the user liked.
+
+        Args:
+            liked_books (list): list of book ids.
+
+        Returns:
+            authors(list): Ids of the authors. 
+            descriptions(list): Descriptions of the books. 
+        """
         if not liked_books:
             return [], []
 
@@ -111,7 +138,12 @@ class Recommend:
         return list(authors), descriptions
 
     def get_book_titles(self, book_ids):
-        """Fetch titles for a list of book IDs."""
+        """Fetch titles for a list of book IDs.
+        Args: 
+            book_ids (list): Book ids whose titles are to be fetched.  
+        Returns:
+            titles(list): List of titles. 
+        """
         if not book_ids:
             return {}
 
@@ -128,26 +160,38 @@ class Recommend:
         for hit in res["hits"]["hits"]:
             source = hit["_source"]
             titles[source["book_id"]] = source.get("title", "Unknown Title")
-        
+
         return titles
 
-    def recommend(self, query, user, limit=50, holdout_book_id=None, raw_results=False):
+    def recommend(self, query, user, limit=50, holdout_book_ids=None, raw_results=False, boosts=None):
         """
         The recommendation engine. Combines similar user's tastes with the given query. 
         Args:
             query (str): The book the user is looking for. 
             user (str): User id
             limit (int): Number of max books to return
-            holdout_book_id (str): A book ID to hold out of the history (for testing).
+            holdout_book_ids (list): A list of book IDs to hold out of the history (for testing).
             raw_results (bool): Return the raw dictionary instead of printing
+            boosts (dict): Optional custom boost values for A/B testing
         """
+
+        # default boosts if not provided
+        if boosts is None:
+            boosts = {
+                "title": 3.0,
+                "authors": 1.5,
+                "similar_users": 0.0,
+                "description": 0.0
+            }
+
         # so we can build up the master query
         must = []
         must_not = []
         should = []
 
         # so we know what they've read so far.
-        read_books, liked_books = self.get_user_history(user_id=user, holdout_book_id=holdout_book_id)
+        read_books, liked_books = self.get_user_history(
+            user_id=user, holdout_book_ids=holdout_book_ids)
 
         # get similar users and the books thety've read
         candidate_books, similar_users = self.get_books_from_similar_users(
@@ -157,13 +201,13 @@ class Recommend:
         liked_authors, liked_descriptions = self.get_liked_book_details(
             liked_books)
 
-        must.append({
-            "multi_match": {
-                "query": query,
-                # Title matches are worth 2x description matches
-                "fields": ["title^2", "description"]
-            }
-        })
+        if query:
+            must.append({
+                "multi_match": {
+                    "query": query,
+                    "fields": [f"title^{boosts['title']}", "description"]
+                }
+            })
 
         # make sure we dont get books that they've read
         if read_books:
@@ -174,16 +218,16 @@ class Recommend:
             should.append({
                 "terms": {
                     "authors": liked_authors,
-                    "boost": 2.0
+                    "boost": boosts["authors"]
                 }
             })
 
         # Boost if recommended by similar users
-        if similar_users:
+        if candidate_books:
             should.append({
                 "terms": {
-                    "book_id": similar_users,
-                    "boost": 3.0
+                    "book_id": candidate_books,
+                    "boost": boosts["similar_users"]
                 }
             })
 
@@ -197,7 +241,7 @@ class Recommend:
                     "like": combined_desc,
                     "min_term_freq": 1,
                     "max_query_terms": 12,
-                    "boost": 1.5
+                    "boost": boosts["description"]
                 }
             })
 
@@ -212,7 +256,7 @@ class Recommend:
             "size": limit
         }
 
-        #Execute and Display
+        # Execute and Display
         response = self.es.search(index="books", body=master_query)
 
         hits = response["hits"]["hits"]
@@ -239,52 +283,10 @@ class Recommend:
             print(f"   {snippet}")
             print("-" * 60)
 
+    
 
 if __name__ == '__main__':
     engine = Recommend()
     user_id = "37b3e60b4e4152c580fd798d405150ff"
     read, liked = engine.get_user_history(user_id)
-
-    read_titles = engine.get_book_titles(read)
-    print(f"Read Books ({len(read)}):")
-    for r in read[:5]:  # Just show top 5 for brevity
-        print(f" - {read_titles.get(r, r)}")
-    if len(read) > 5:
-        print("   ...")
-
-    liked_titles = engine.get_book_titles(liked)
-    print(f"\nLiked Books ({len(liked)}):")
-    for l in liked[:5]:
-        print(f" - {liked_titles.get(l, l)}")
-    if len(liked) > 5:
-        print("   ...")
-
-    #debug to be removed
-    query = {
-        "query": {
-            "bool": {
-                "must": [
-                    {"terms": {"book_id": liked}},
-                    {"range": {"rating": {"gte": 4}}}
-                ]
-            }
-        }
-    }
-    test = engine.es.search(index="reviews", body=query)
-    print(
-        f"Reviews matching liked books with rating >= 4: {test['hits']['total']['value']}")
-    if test['hits']['hits']:
-        print(f"Sample: {test['hits']['hits'][0]}")
-
-    candidate, similar = engine.get_books_from_similar_users(
-        liked_books=liked, read_books=read, user_id="37b3e60b4e4152c580fd798d405150ff")
-    
-    candidate_titles = engine.get_book_titles(candidate)
-    print(f"\nSimilar users: {similar}")
-    print("\nCandidate books from similar users:")
-    for book_id in candidate:
-        print(f" - {candidate_titles.get(book_id, book_id)}")
-    print("\n" + "="*80)
-    print("Running Full Recommendation Engine...")
-    print("="*80)
-    engine.recommend(query="romance drama", user="37b3e60b4e4152c580fd798d405150ff")
+    engine.recommend(query="love and the city", user=user_id)
