@@ -12,11 +12,10 @@ class Recommend:
             "http://localhost:9200",
             basic_auth=("elastic", "YwGNRfez"))
 
-    def get_user_history(self, user_id, holdout_book_ids=None):
+    def get_user_history(self, user_id):
         """Fetch user's read history and their likes.
         Args:
             user_id (str): User id
-            holdout_book_ids(list | null): List containing books we want to hide for eval purposes.
         Returns: 
             read_books (list): List of book ids.
             liked_books(list): List of liked book ids. 
@@ -33,8 +32,6 @@ class Recommend:
         liked_books = []
         for book in hits:
             book_id = book['_source']['book_id']
-            if holdout_book_ids and book_id in holdout_book_ids:
-                continue  # Skip the holdout books
             read_books.append(book_id)
             if (book['_source']['rating'] >= 3):
                 liked_books.append(book_id)
@@ -163,14 +160,13 @@ class Recommend:
 
         return titles
 
-    def recommend(self, query, user, limit=50, holdout_book_ids=None, raw_results=False, boosts=None):
+    def recommend(self, query, user, limit=50, raw_results=False, boosts=None):
         """
         The recommendation engine. Combines similar user's tastes with the given query. 
         Args:
             query (str): The book the user is looking for. 
             user (str): User id
             limit (int): Number of max books to return
-            holdout_book_ids (list): A list of book IDs to hold out of the history (for testing).
             raw_results (bool): Return the raw dictionary instead of printing
             boosts (dict): Optional custom boost values for A/B testing
         """
@@ -191,7 +187,7 @@ class Recommend:
 
         # so we know what they've read so far.
         read_books, liked_books = self.get_user_history(
-            user_id=user, holdout_book_ids=holdout_book_ids)
+            user_id=user)
 
         # get similar users and the books thety've read
         candidate_books, similar_users = self.get_books_from_similar_users(
@@ -275,12 +271,10 @@ class Recommend:
             authors = ", ".join(source.get("authors", []))
             rating = source.get("average_rating", "N/A")
             desc = source.get("description", "")
-            snippet = desc[:150] + "..." if len(desc) > 150 else desc
-
             print(f"{i}. {title}")
             print(
                 f"   Author(s): {authors} | Avg Rating: {rating} | Match Score: {hit['_score']:.2f}")
-            print(f"   {snippet}")
+            print(f"   {desc}")
             print("-" * 60)
 
     
