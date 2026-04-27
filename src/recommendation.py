@@ -308,8 +308,8 @@ if __name__ == '__main__':
     buckets = res.get("aggregations", {}).get(
         "users_with_reviews", {}).get("buckets", [])
     # print(buckets)
-    user_id = "37b3e60b4e4152c580fd798d405150ff"
-    # user_id = "9003d274774f4c47e62f77600b08ac1d"
+    user_id = "37b3e60b4e4152c580fd798d405150ff" # nerd user
+    # user_id = "9003d274774f4c47e62f77600b08ac1d" # not nerd user
     read, liked = engine.get_user_history(user_id)
     print(engine.get_book_titles(liked))
     
