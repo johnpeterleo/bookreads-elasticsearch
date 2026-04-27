@@ -1,10 +1,4 @@
 from elasticsearch import Elasticsearch
-"""
-get user history, 
-get the books that readers with similar tastes read,
-
-"""
-
 
 class Recommend:
     def __init__(self):
