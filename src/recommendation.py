@@ -124,6 +124,7 @@ class Recommend:
 
         authors = set()
         descriptions = []
+        
         for hit in res["hits"]["hits"]:
             source = hit["_source"]
             if source.get("authors"):
@@ -283,22 +284,23 @@ if __name__ == '__main__':
     es = Elasticsearch(
         "http://localhost:9200",
         basic_auth=("elastic", "YwGNRfez"))
+
     res = es.search(index="reviews", body={
         "query": {
-        "bool": {
-            "must": {"range": {
-                "rating": {
-                    "gte": 1.0,
-                    "lte": 5.0
-                }
-            }}
-        }
+            "bool": {
+                "must": {"range": {
+                    "rating": {
+                        "gte": 1.0,
+                        "lte": 5.0
+                    }
+                }}
+            }
         },
         "aggs": {
             "users_with_reviews": {
                 "terms": {
                     "field": "user_id",
-                    "size":10
+                    "size": 10
                 }
             }
         }
@@ -307,6 +309,8 @@ if __name__ == '__main__':
         "users_with_reviews", {}).get("buckets", [])
     # print(buckets)
     user_id = "37b3e60b4e4152c580fd798d405150ff"
-    #user_id = "9003d274774f4c47e62f77600b08ac1d"
-    # read, liked = engine.get_user_history(user_id)
-    engine.recommend(query="Love and the city", user=user_id)
+    # user_id = "9003d274774f4c47e62f77600b08ac1d"
+    read, liked = engine.get_user_history(user_id)
+    print(engine.get_book_titles(liked))
+    
+    #engine.recommend(query="Love and the city", user=user_id)
