@@ -168,16 +168,16 @@ class Recommend:
             user (str): User id
             limit (int): Number of max books to return
             raw_results (bool): Return the raw dictionary instead of printing
-            boosts (dict): Optional custom boost values for A/B testing
+            boosts (dict): Optional custom boost values
         """
 
         # default boosts if not provided
         if boosts is None:
             boosts = {
-                "title": 3.0,
-                "authors": 1.5,
-                "similar_users": 0.0,
-                "description": 0.0
+                "title": 2.0,
+                "authors": 2.0,
+                "similar_users": 3.0,
+                "description": 1.5
             }
 
         # so we can build up the master query
@@ -190,7 +190,7 @@ class Recommend:
             user_id=user)
 
         # get similar users and the books thety've read
-        candidate_books, similar_users = self.get_books_from_similar_users(
+        candidate_books, _ = self.get_books_from_similar_users(
             liked_books, read_books, user)
 
         # get liked authors and descriptions for weighting purposes
@@ -227,7 +227,7 @@ class Recommend:
                 }
             })
 
-        # Boost if the description is similar to their favorably rated books (More Like This)
+        # Boost if the description is similar to their liked books (More Like This)
         if liked_descriptions:
             # Limit to top 10 to avoid massive text payload
             combined_desc = " ".join(liked_descriptions[:10])
@@ -277,10 +277,36 @@ class Recommend:
             print(f"   {desc}")
             print("-" * 60)
 
-    
 
 if __name__ == '__main__':
     engine = Recommend()
-    user_id = "37b3e60b4e4152c580fd798d405150ff"
-    read, liked = engine.get_user_history(user_id)
-    engine.recommend(query="love and the city", user=user_id)
+    es = Elasticsearch(
+        "http://localhost:9200",
+        basic_auth=("elastic", "YwGNRfez"))
+    res = es.search(index="reviews", body={
+        "query": {
+        "bool": {
+            "must": {"range": {
+                "rating": {
+                    "gte": 1.0,
+                    "lte": 5.0
+                }
+            }}
+        }
+        },
+        "aggs": {
+            "users_with_reviews": {
+                "terms": {
+                    "field": "user_id",
+                    "size":10
+                }
+            }
+        }
+    })
+    buckets = res.get("aggregations", {}).get(
+        "users_with_reviews", {}).get("buckets", [])
+    # print(buckets)
+    # user_id = "37b3e60b4e4152c580fd798d405150ff"
+    user_id = "9003d274774f4c47e62f77600b08ac1d"
+    # read, liked = engine.get_user_history(user_id)
+    engine.recommend(query="", user=user_id)
